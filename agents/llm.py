@@ -23,7 +23,7 @@ GRADING ENVIRONMENT
                          https://huggingface.co/google/gemma-4-31B-it
     Server               vLLM, OpenAI-compatible
     Temperature          0.0, fixed. Overriding has no effect.
-    Guided decoding      enabled, via extra_body={"guided_json": ...}
+    Guided decoding      enabled, via response_format={"type": "json_schema", ...}
     Network              egress restricted to this endpoint only
 
     Precision, max context, max output tokens, and tool-calling support are as published
@@ -40,7 +40,8 @@ from __future__ import annotations
 import functools
 import json
 import os
-from typing import Any, Iterable
+from collections.abc import Iterable
+from typing import Any
 
 from dotenv import load_dotenv
 from openai import OpenAI
@@ -153,10 +154,9 @@ def complete(
 ) -> str:
     """One completion. Returns the assistant message content.
 
-    Pass `schema` to constrain output to a JSON Schema. vLLM's guided decoding masks
-    tokens that would violate it during generation, so the result is guaranteed
-    parseable rather than merely likely to be. Prefer this over prompting for JSON and
-    hoping.
+    Pass `schema` to constrain output to a JSON Schema. The server masks tokens that
+    would violate it during generation, so the result is guaranteed parseable rather
+    than merely likely to be. Prefer this over prompting for JSON and hoping.
 
     The guarantee is structural, not semantic: a schema-valid {"answer": null} is still
     wrong. Keep schemas flat -- deeply nested constraints measurably degrade answer
@@ -178,8 +178,12 @@ def complete(
     if stop:
         kwargs["stop"] = stop
     if schema is not None:
-        # vLLM reads guided_json off the request body on the OpenAI-compatible route.
-        kwargs["extra_body"] = {"guided_json": schema}
+        # Standard OpenAI structured-output field, not a vLLM-specific extra_body key
+
+        kwargs["response_format"] = {
+            "type": "json_schema",
+            "json_schema": {"name": "response", "schema": schema},
+        }
 
     try:
         resp = api.chat.completions.create(**kwargs)
